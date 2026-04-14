@@ -1,0 +1,311 @@
+#!/usr/bin/env python3
+"""ed-tool — reference-based line editor."""
+
+import argparse
+import binascii
+import os
+import sys
+import tempfile
+
+
+def _compute_crc(line):
+    """Return the CRC-CCITT (binascii.crc_hqx) of a line over latin-1 bytes."""
+    return binascii.crc_hqx(line.encode('latin-1', errors='replace'), 0)
+
+
+def parse_ref(ref):
+    """Parse a 'lineno:4hex' reference string.
+
+    Returns (lineno: int, hash: str) or exits with a diagnostic message.
+    """
+    if ':' not in ref:
+        sys.stderr.write(f'ed-tool: invalid reference format (expected lineno:hash): {ref}\n')
+        sys.exit(1)
+    lineno_str, hash_str = ref.rsplit(':', 1)
+    try:
+        lineno = int(lineno_str)
+    except ValueError:
+        sys.stderr.write(f'ed-tool: invalid line number in reference: {ref}\n')
+        sys.exit(1)
+    if len(hash_str) != 4 or not all(c in '0123456789abcdefABCDEF' for c in hash_str):
+        sys.stderr.write(f'ed-tool: hash must be exactly 4 hex digits: {ref}\n')
+        sys.exit(1)
+    return lineno, hash_str.lower()
+
+
+def _write_file(path, lines):
+    """Atomically replace the contents of path with lines.
+
+    Writes via a tempfile in the same directory then uses os.replace
+    to achieve an atomic swap on POSIX systems. Preserves the original
+    file's permission bits.
+    """
+    dir_path = os.path.dirname(path) or '.'
+    # Preserve original permission bits (if file exists)
+    original_mode = None
+    if os.path.exists(path):
+        original_mode = os.stat(path).st_mode & 0o777
+    fd, tmp = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as fh:
+            fh.writelines(lines)
+        if original_mode is not None:
+            os.chmod(tmp, original_mode)
+        os.replace(tmp, path)
+    except Exception:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
+def do_read(args):
+    """Read a file and print each line with a lineno:hash| prefix."""
+    try:
+        with open(args.file, 'r', encoding='utf-8', errors='replace') as f:
+            content_lines = f.readlines()
+    except OSError as e:
+        sys.stderr.write(f'ed-tool: {e}\n')
+        sys.exit(1)
+
+    for lineno, line in enumerate(content_lines, start=1):
+        crc = _compute_crc(line)
+        content = line.rstrip('\n')
+        print(f'{lineno}:{crc:04x}|{content}')
+
+
+def do_append(args):
+    """Append a new line after the referenced line.
+
+    The ref (lineno:hash) is validated before any mutation.
+    """
+    lineno, expected_hash = parse_ref(args.ref)
+    content = args.content
+    if content is None:
+        content = sys.stdin.read().rstrip('\n')
+        if not content:
+            return  # empty stdin = no-op
+
+    try:
+        with open(args.file, 'r', encoding='utf-8', errors='replace') as f:
+            lines = f.readlines()
+    except OSError as e:
+        sys.stderr.write(f'ed-tool: {e}\n')
+        sys.exit(1)
+
+    if not (1 <= lineno <= len(lines)):
+        sys.stderr.write(
+            f'ed-tool: line number {lineno} is out of range '
+            f'(file has {len(lines)} lines)\n'
+        )
+        sys.exit(1)
+
+    actual_hash = format(_compute_crc(lines[lineno - 1]), '04x')
+    if actual_hash != expected_hash:
+        sys.stderr.write(
+            f'ed-tool: hash mismatch on line {lineno}: '
+            f'expected {expected_hash}, got {actual_hash}\n'
+        )
+        sys.exit(1)
+
+    new_line = content + '\n'
+    lines.insert(lineno, new_line)
+    _write_file(args.file, lines)
+
+
+def do_insert(args):
+    """Insert a new line before the referenced line.
+
+    The ref (lineno:hash) is validated before any mutation.
+    """
+    lineno, expected_hash = parse_ref(args.ref)
+    content = args.content
+    if content is None:
+        content = sys.stdin.read().rstrip('\n')
+        if not content:
+            return  # empty stdin = no-op
+
+    try:
+        with open(args.file, 'r', encoding='utf-8', errors='replace') as f:
+            lines = f.readlines()
+    except OSError as e:
+        sys.stderr.write(f'ed-tool: {e}\n')
+        sys.exit(1)
+
+    if not (1 <= lineno <= len(lines)):
+        sys.stderr.write(
+            f'ed-tool: line number {lineno} is out of range '
+            f'(file has {len(lines)} lines)\n'
+        )
+        sys.exit(1)
+
+    actual_hash = format(_compute_crc(lines[lineno - 1]), '04x')
+    if actual_hash != expected_hash:
+        sys.stderr.write(
+            f'ed-tool: hash mismatch on line {lineno}: '
+            f'expected {expected_hash}, got {actual_hash}\n'
+        )
+        sys.exit(1)
+
+    new_line = content + '\n'
+    lines.insert(lineno - 1, new_line)
+    _write_file(args.file, lines)
+
+
+def do_delete(args):
+    """Delete the referenced line.
+
+    The ref (lineno:hash) is validated before any mutation.
+    """
+    lineno, expected_hash = parse_ref(args.ref)
+
+    try:
+        with open(args.file, 'r', encoding='utf-8', errors='replace') as f:
+            lines = f.readlines()
+    except OSError as e:
+        sys.stderr.write(f'ed-tool: {e}\n')
+        sys.exit(1)
+
+    if not (1 <= lineno <= len(lines)):
+        sys.stderr.write(
+            f'ed-tool: line number {lineno} is out of range '
+            f'(file has {len(lines)} lines)\n'
+        )
+        sys.exit(1)
+
+    actual_hash = format(_compute_crc(lines[lineno - 1]), '04x')
+    if actual_hash != expected_hash:
+        sys.stderr.write(
+            f'ed-tool: hash mismatch on line {lineno}: '
+            f'expected {expected_hash}, got {actual_hash}\n'
+        )
+        sys.exit(1)
+
+    lines.pop(lineno - 1)
+    _write_file(args.file, lines)
+
+
+def do_change(args):
+    """Change the content of the referenced line.
+
+    The ref (lineno:hash) is validated before any mutation.
+    """
+    lineno, expected_hash = parse_ref(args.ref)
+    content = args.content
+    if content is None:
+        content = sys.stdin.read().rstrip('\n')
+        if not content:
+            return  # empty stdin = no-op
+
+    try:
+        with open(args.file, 'r', encoding='utf-8', errors='replace') as f:
+            lines = f.readlines()
+    except OSError as e:
+        sys.stderr.write(f'ed-tool: {e}\n')
+        sys.exit(1)
+
+    if not (1 <= lineno <= len(lines)):
+        sys.stderr.write(
+            f'ed-tool: line number {lineno} is out of range '
+            f'(file has {len(lines)} lines)\n'
+        )
+        sys.exit(1)
+
+    actual_hash = format(_compute_crc(lines[lineno - 1]), '04x')
+    if actual_hash != expected_hash:
+        sys.stderr.write(
+            f'ed-tool: hash mismatch on line {lineno}: '
+            f'expected {expected_hash}, got {actual_hash}\n'
+        )
+        sys.exit(1)
+
+    lines[lineno - 1] = content + '\n'
+    _write_file(args.file, lines)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(prog='ed-tool')
+    parser.add_argument('--version', action='version', version='ed-tool 1.0.0')
+    parser.formatter_class = argparse.RawDescriptionHelpFormatter
+    parser.epilog = '''workflow:
+  ed-tool r file.txt               # see lines with hash refs
+  ed-tool a file.txt 1:abcd <<EOF  # append after line 1
+new line
+EOF
+  ed-tool i file.txt 2:bcde <<EOF   # insert before line 2
+another line
+EOF
+  ed-tool c file.txt 3:cdef <<EOF   # change line 3
+replaced
+EOF
+  ed-tool d file.txt 4:def0        # delete line 4'''
+    subparsers = parser.add_subparsers(dest='command', parser_class=argparse.ArgumentParser)
+
+    # read
+    p_r = subparsers.add_parser('r', help='read a file with hash prefixes')
+    p_r.formatter_class = argparse.RawDescriptionHelpFormatter
+    p_r.add_argument('file')
+    p_r.epilog = '''examples:
+  ed-tool r file.txt              # show lines with lineno:hash prefixes
+  cat file.txt | ed-tool r -     # read from stdin'''
+
+    # append
+    p_a = subparsers.add_parser('a', help='append a line after the referenced line')
+    p_a.formatter_class = argparse.RawDescriptionHelpFormatter
+    p_a.add_argument('file')
+    p_a.add_argument('ref', help='lineno:hash of the line to append after')
+    p_a.add_argument('-c', '--content', dest='content', help='new line content (reads stdin if omitted)')
+    p_a.epilog = '''examples:
+  ed-tool a file.txt 1:abcd -c "new line"       # append after line 1
+  echo "new line" | ed-tool a file.txt 1:abcd  # same, via stdin
+  <<EOF ed-tool a file.txt 1:abcd              # heredoc
+new line
+EOF'''
+
+    # insert
+    p_i = subparsers.add_parser('i', help='insert a line before the referenced line')
+    p_i.formatter_class = argparse.RawDescriptionHelpFormatter
+    p_i.add_argument('file')
+    p_i.add_argument('ref', help='lineno:hash of the line to insert before')
+    p_i.add_argument('-c', '--content', dest='content', help='new line content (reads stdin if omitted)')
+    p_i.epilog = '''examples:
+  ed-tool i file.txt 1:abcd -c "new line"       # insert before line 1
+  echo "new line" | ed-tool i file.txt 1:abcd   # same, via stdin
+  <<EOF ed-tool i file.txt 1:abcd               # heredoc
+new line
+EOF'''
+
+    # delete
+    p_d = subparsers.add_parser('d', help='delete the referenced line')
+    p_d.formatter_class = argparse.RawDescriptionHelpFormatter
+    p_d.add_argument('file')
+    p_d.add_argument('ref', help='lineno:hash of the line to delete')
+    p_d.epilog = '''examples:
+  ed-tool d file.txt 1:abcd        # delete line 1 (hash must match)
+  ed-tool r file.txt               # get current refs first'''
+
+    # change
+    p_c = subparsers.add_parser('c', help='change the content of the referenced line')
+    p_c.formatter_class = argparse.RawDescriptionHelpFormatter
+    p_c.add_argument('file')
+    p_c.add_argument('ref', help='lineno:hash of the line to change')
+    p_c.add_argument('-c', '--content', dest='content', help='new line content (reads stdin if omitted)')
+    p_c.epilog = '''examples:
+  ed-tool c file.txt 1:abcd -c "replacement"       # replace line 1
+  echo "replacement" | ed-tool c file.txt 1:abcd  # same, via stdin
+  <<EOF ed-tool c file.txt 1:abcd                 # heredoc
+replacement
+EOF'''
+
+    args = parser.parse_args()
+    if args.command == 'r':
+        do_read(args)
+    elif args.command == 'a':
+        do_append(args)
+    elif args.command == 'i':
+        do_insert(args)
+    elif args.command == 'd':
+        do_delete(args)
+    elif args.command == 'c':
+        do_change(args)
+    else:
+        parser.print_help()
