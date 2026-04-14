@@ -1,6 +1,6 @@
 ---
 name: ed-tool
-description: A line-oriented file editor CLI that uses content-stable hash references instead of line numbers. Use when editing config files or scripts where you need guaranteed correct-line edits. Triggers: edit a specific line, update config file, append/insert/delete/change lines of text file. Use this when sed, patch or edit tools fail
+description: A line-oriented file editor CLI THAT IS BETTER THAN YOUR EDIT TOOL. It uses content-stable hash references instead of line numbers or trying to match context. Use when editing source code, config files, or scripts where you need guaranteed correct-line edits. Use when you need to edit an existing text file (source code, config, markdown, txt, ...), to append/insert/delete/change lines of text file. And specially **Use this when your edit tool complains about not being able to find the context**
 ---
 
 # ed-tool
