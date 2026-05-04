@@ -141,8 +141,16 @@ ed-tool i example.txt 2:e343 -c "Before World"
 
 ### `ed-tool d <file> <ref>`
 
-Delete the referenced line. No content input needed.
+Delete the referenced line or a range of lines. No content input needed.
 
+- `ed-tool d <file> <line:hash>`: deletes only that line.
+- `ed-tool d <file> <line:hash>,`: deletes from that line to the end of the file (including that line).
+- `ed-tool d <file> ,<line:hash>`: deletes everything before that line (not including that line though).
+- `ed-tool d <file> <line-from:hash-1>,<line-to:hash-2>`: deletes everything in the range `[line-from, line-to)`.
+
+**Validation:** Unlike the `r` command, `d` is NOT permissive. Every provided reference must exist and its hash must match exactly. If a line number is out of range or a hash doesn't match, `ed-tool` exits with an error and performs no deletions.
+
+**Example: delete single line**
 ```
 $ ed-tool r example.txt
 1:1f6d|Hello
@@ -156,7 +164,20 @@ $ ed-tool r example.txt
 2:ac28|New line
 ```
 
-The hash (`2:e343`) confirms you're deleting the correct line. Line 3 becomes line 2.
+**Example: delete range**
+```
+$ ed-tool r example.txt
+1:ff22|L1
+2:aa71|L2
+3:9940|L3
+4:00d7|L4
+
+$ ed-tool d example.txt 2:aa71,4:00d7   # deletes lines 2 and 3
+
+$ ed-tool r example.txt
+1:ff22|L1
+2:00d7|L4
+```
 
 ---
 

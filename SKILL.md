@@ -64,6 +64,15 @@ echo "content" | ed-tool i <file> 2:e343
 # Delete line 2
 ed-tool d <file> 2:e343
 
+# Delete range [2, 5)
+ed-tool d <file> 2:e343,5:f9a6
+
+# Delete from line 2 to EOF
+ed-tool d <file> 2:e343,
+
+# Delete everything before line 5
+ed-tool d <file> ,5:f9a6
+
 # Replace line 2
 echo "new content" | ed-tool c <file> 2:e343
 ```
@@ -105,7 +114,7 @@ make sure you are always editing based on fresh changes.
 | `ed-tool r <file> [range]` | Read file with hash prefixes and optional range | File path, optional range |
 | `ed-tool a <file> <ref>` | Append after referenced line | stdin or `-c` |
 | `ed-tool i <file> <ref>` | Insert before referenced line | stdin or `-c` |
-| `ed-tool d <file> <ref>` | Delete referenced line | None |
+| `ed-tool d <file> <ref>` | Delete referenced line or range | None |
 | `ed-tool c <file> <ref>` | Replace referenced line | stdin or `-c` |
 
 **Reference format:** `lineno:4-hex-crc` (e.g., `2:e343`)
@@ -268,6 +277,9 @@ echo "content" | ed-tool i <file> N:HASH
 
 # Delete line N
 ed-tool d <file> N:HASH
+
+# Delete range [N, M)
+ed-tool d <file> N:HASH1,M:HASH2
 
 # Replace line N
 echo "content" | ed-tool c <file> N:HASH
