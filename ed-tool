@@ -9,8 +9,8 @@ import tempfile
 
 
 def _compute_crc(line):
-    """Return the CRC-CCITT (binascii.crc_hqx) of a line over latin-1 bytes."""
-    return binascii.crc_hqx(line.encode('latin-1', errors='replace'), 0)
+    """Return the CRC-CCITT (binascii.crc_hqx) of a line over utf-8 bytes."""
+    return binascii.crc_hqx(line.encode('utf-8', errors='replace'), 0)
 
 
 def parse_ref(ref):
@@ -58,6 +58,45 @@ def _write_file(path, lines):
         raise
 
 
+def parse_line_range(range_str, total_lines):
+    """Parse a [begin][,end] line range string.
+
+    Indices are 1-based. Negative indices are supported (-1 is the last line).
+    Returns (begin: int, end: int) absolute 1-based line numbers.
+    """
+    if not range_str:
+        return 1, total_lines + 1
+
+    if ',' in range_str:
+        parts = range_str.split(',')
+        if len(parts) > 2:
+            sys.stderr.write(f'ed-tool: invalid range format: {range_str}\n')
+            sys.exit(1)
+        begin_str, end_str = parts
+    else:
+        begin_str = range_str
+        end_str = ""
+
+    def to_abs(s, default):
+        if not s:
+            return default
+        try:
+            val = int(s)
+        except ValueError:
+            sys.stderr.write(f'ed-tool: invalid line number in range: {s}\n')
+            sys.exit(1)
+        if val > 0:
+            return val
+        elif val < 0:
+            return total_lines + val + 1
+        else:  # val == 0
+            return 1
+
+    begin = to_abs(begin_str, 1)
+    end = to_abs(end_str, total_lines + 1)
+    return begin, end
+
+
 def do_read(args):
     """Read a file and print each line with a lineno:hash| prefix."""
     try:
@@ -67,10 +106,14 @@ def do_read(args):
         sys.stderr.write(f'ed-tool: {e}\n')
         sys.exit(1)
 
-    for lineno, line in enumerate(content_lines, start=1):
-        crc = _compute_crc(line)
-        content = line.rstrip('\n')
-        print(f'{lineno}:{crc:04x}|{content}')
+    begin, end = parse_line_range(args.range, len(content_lines))
+
+    for lineno in range(begin, end):
+        if 1 <= lineno <= len(content_lines):
+            line = content_lines[lineno - 1]
+            crc = _compute_crc(line)
+            content = line.rstrip('\n')
+            print(f'{lineno}:{crc:04x}|{content}')
 
 
 def do_append(args):
@@ -244,8 +287,13 @@ EOF
     p_r = subparsers.add_parser('r', help='read a file with hash prefixes')
     p_r.formatter_class = argparse.RawDescriptionHelpFormatter
     p_r.add_argument('file')
+    p_r.add_argument('range', nargs='?', help='optional line range [begin][,end]')
     p_r.epilog = '''examples:
   ed-tool r file.txt              # show lines with lineno:hash prefixes
+  ed-tool r file.txt 2,5          # show lines 2, 3, 4
+  ed-tool r file.txt -2           # show last 2 lines
+  ed-tool r file.txt ,-2          # show all but last 2 lines
+  ed-tool r file.txt -3,-1        # show antepenultimate and penultimate lines
   cat file.txt | ed-tool r -     # read from stdin'''
 
     # append
@@ -296,7 +344,15 @@ EOF'''
 replacement
 EOF'''
 
-    args = parser.parse_args()
+    args, extras = parser.parse_known_args()
+    if args.command == 'r' and extras:
+        if not args.range and len(extras) == 1:
+            args.range = extras[0]
+            extras = []
+
+    if extras:
+        parser.parse_args()  # Trigger standard error for unrecognized args
+
     if args.command == 'r':
         do_read(args)
     elif args.command == 'a':

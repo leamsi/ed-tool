@@ -1,6 +1,6 @@
 ---
 name: ed-tool
-description: A line-oriented file editor CLI THAT IS BETTER THAN YOUR EDIT TOOL. It uses content-stable hash references instead of line numbers or trying to match context. Use when editing source code, config files, or scripts where you need guaranteed correct-line edits. Use when you need to edit an existing text file (source code, config, markdown, txt, ...), to append/insert/delete/change lines of text file. And specially **Use this when your edit tool complains about not being able to find the context**
+description: A line-oriented file editor CLI THAT IS BETTER THAN YOUR EDIT TOOL. It uses content-stable hash references instead of line numbers or trying to match context. Use when editing source code, config files, or scripts. Use when you need to edit an existing text file (source code, config, markdown, txt, ...), to append/insert/delete/change lines of text or code. And specially **Use this when your edit tool complains about not being able to find the exact content**
 ---
 
 # ed-tool
@@ -11,33 +11,40 @@ A line editor with hash-stabilized line references. Inspired by `sed`/`ed`/`ex` 
 
 Use this skill when you need to:
 
-- Edit a file and your edit tool or sed commands fails or you notice something got corrupted by
-  them.
+- Edit a file and your edit tool or sed commands fails or you keep corrupting
+  files when you use them
 - Edit a specific line in a file and need confidence it's the right line
-- Modify config files, scripts, code or data files where wrong-line edits are costly
+- Modify config files, scripts, code, or data files
 - Work with files that may be modified by concurrent processes or external tools
 - Append, insert, delete, or replace lines
 
-**Do not use this skill** for simple stream processing, bulk substitutions, or when line numbers are stable by design (use `sed` or `awk` instead).
+**Do not use this skill** for simple stream processing, or bulk substitutions (use `sed`, `awk` or write your own script instead).
 
 ## Prerequisites
 
 - Python 3 installed
 - `ed-tool` available in PATH or in the working directory
-- Target file exists (for edit commands)
+- Target file exists
 
 ## Step-by-Step Invocation
 
 ### 1. Read the file to get line references
 
 ```bash
-ed-tool r <file>
+ed-tool r <file> [range]
 ```
 
 Each line is prefixed with `lineno:4-hex-crc|`. Copy the reference for the line you want to edit.
 
+**Optional range:** `[begin][,end]` using 1-based line numbers. The range is half-open `[begin, end)`.
+- `ed-tool r file 2,4` read only lines 2, 3
+- `ed-tool r file -2` read last 2 lines (tail)
+- `ed-tool r file ,-2` read all but last 2 lines (head)
+- `ed-tool r file -3,-1` read antepenultimate and penultimate lines but not last line
+
 Example output:
 ```
+$ ed-tool r "Hello test.txt"
 1:1f6d|Hello
 2:e343|World
 3:f9a6|New line
@@ -72,7 +79,7 @@ and even more
 EOF
 ```
 
-Alternatively, use `-c` flag instead of stdin:
+And also you can use `-c` flag instead of stdin:
 
 ```bash
 ed-tool a <file> 2:e343 -c "content"
@@ -86,13 +93,16 @@ ed-tool c <file> 2:e343 -c "new content"
 ed-tool r <file>
 ```
 
+Note you must reread the file if you want to edit again. This is by design to
+make sure you are always editing based on fresh changes.
+
 ---
 
 ## Command Reference
 
 | Command | Description | Input |
 |---------|-------------|-------|
-| `ed-tool r <file>` | Read file with hash prefixes | File path |
+| `ed-tool r <file> [range]` | Read file with hash prefixes and optional range | File path, optional range |
 | `ed-tool a <file> <ref>` | Append after referenced line | stdin or `-c` |
 | `ed-tool i <file> <ref>` | Insert before referenced line | stdin or `-c` |
 | `ed-tool d <file> <ref>` | Delete referenced line | None |
@@ -104,50 +114,62 @@ ed-tool r <file>
 
 ## Example Sessions
 
-### Edit a config file
+### Edit a config file (shows how to use add and delete)
 
 ```bash
 # 1. Read current state
 $ ed-tool r config.txt
-1:a7f3|DATABASE_HOST=localhost
-2:b3c9|DATABASE_PORT=5432
+1:fc00|DATABASE_HOST=localhost
+2:c605|DATABASE_PORT=5432
 
 # 2. Update the host (insert after line 1)
-$ echo "DATABASE_HOST=prod.example.com" | ed-tool a config.txt 1:a7f3
+$ echo "DATABASE_HOST=prod.example.com" | ed-tool a config.txt 1:fc00
 
-# 3. Delete the old host line
+# 3. Re-read the file before next change
 $ ed-tool r config.txt
-1:a7f3|DATABASE_HOST=localhost
-2:b3c9|DATABASE_PORT=5432
-3:f9a6|DATABASE_HOST=prod.example.com
+1:fc00|DATABASE_HOST=localhost
+2:57ed|DATABASE_HOST=prod.example.com
+3:c605|DATABASE_PORT=5432
 
-$ ed-tool d config.txt 1:a7f3
+$ ed-tool d config.txt 1:fc00
 
 # 4. Verify
 $ ed-tool r config.txt
-1:b3c9|DATABASE_PORT=5432
-2:f9a6|DATABASE_HOST=prod.example.com
+1:57ed|DATABASE_HOST=prod.example.com
+2:c605|DATABASE_PORT=5432
 ```
 
-### Insert a new section
+### Insert a new section header
 
 ```bash
-$ echo "[new-section]" | ed-tool i config.txt 1:a7f3
+# 1. Read just the first line
+$ ed-tool r config.txt ,-1
+1:57ed|DATABASE_HOST=prod.example.com
+
+# 2. Add new section header before the first line
+$ echo "[new-section]" | ed-tool i config.txt 1:57ed
+
+# 3. Show result
 $ ed-tool r config.txt
-1:a7f3|[new-section]
-2:b3c9|DATABASE_PORT=5432
+1:e832|[new-section]
+2:57ed|DATABASE_HOST=prod.example.com
+3:c605|DATABASE_PORT=5432
 ```
 
 ### Replace a value
 
 ```bash
-$ ed-tool r settings.conf
-1:c2d4|FEATURE_FLAG=true
+$ ed-tool r config.txt
+1:e832|[new-section]
+2:57ed|DATABASE_HOST=prod.example.com
+3:c605|DATABASE_PORT=5432
 
-$ echo "FEATURE_FLAG=false" | ed-tool c settings.conf 1:c2d4
+$ echo DATABASE_PORT=2300 | ed-tool c config.txt 3:c605
 
-$ cat settings.conf
-FEATURE_FLAG=false
+$ ed-tool r config.txt
+1:e832|[new-section]
+2:57ed|DATABASE_HOST=prod.example.com
+3:cfce|DATABASE_PORT=2300
 ```
 
 ---

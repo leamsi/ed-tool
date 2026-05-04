@@ -22,7 +22,7 @@ def run(*args, cwd=None, stdin_input=None):
 
 def crc_hex(line):
     """Return the 4-digit hex CRC of a line (including trailing newline)."""
-    return format(binascii.crc_hqx(line.encode('latin-1', errors='replace'), 0), '04x')
+    return format(binascii.crc_hqx(line.encode('utf-8', errors='replace'), 0), '04x')
 
 
 def _ref_prefix(full_line):

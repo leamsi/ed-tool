@@ -51,18 +51,33 @@ mkdir -p ~/.pi/agent/skills/ed-tool && cp SKILL.md ~/.pi/agent/skills/ed-tool/SK
 
 `ed-tool` supports five commands: `r` (read), `a` (append), `i` (insert), `d` (delete), and `c` (change).
 
-### `ed-tool r <file>`
+### `ed-tool r <file> [range]`
 
-Read a file and display each line with its hash reference.
+Read a file and display each line with its hash reference. Optionally specify a line range.
 
 ```
-$ echo -e "Hello\nWorld" > example.txt
+$ echo -e "L1\nL2\nL3\nL4\nL5" > example.txt
 $ ed-tool r example.txt
-1:1f6d|Hello
-2:e343|World
+1:ff22|L1
+2:aa71|L2
+3:9940|L3
+4:00d7|L4
+5:33e6|L5
 ```
 
 The output format is `lineno:4-hex-crc|content`. Use these references for edit commands.
+
+**Range support:**
+You can specify a range as `[begin][,end]` using 1-based line numbers. The range is half-open: `[begin, end)`.
+
+- `ed-tool r file 2,4` Read lines 2, 3
+- `ed-tool r file 2` Read from line 2 to end of file
+- `ed-tool r file ,3` Read lines 1, 2 (first 2 lines)
+- `ed-tool r file -2` Read last 2 lines (tail)
+- `ed-tool r file ,-2` Read everything but last 2 lines (head)
+- `ed-tool r file -3,-1` Read antepenultimate and penultimate lines, but not last line.
+
+Ranges are permissive: `begin` can be 0 (means 1), and `end` can exceed the number of lines. Negative indices count from the end of the file (-1 is the last line).
 
 ---
 
@@ -175,16 +190,23 @@ ed-tool c example.txt 2:e343 -c "Replaced"
 
 ## Worked Examples
 
-### Example 1: Read a File
+### Example 1: Read a File (with Range)
 
 ```
 $ cat greetings.txt
-Hello
-World
+L1
+L2
+L3
+L4
+L5
 
-$ ed-tool r greetings.txt
-1:1f6d|Hello
-2:e343|World
+$ ed-tool r greetings.txt 2,4
+2:aa71|L2
+3:9940|L3
+
+$ ed-tool r greetings.txt -2
+4:00d7|L4
+5:33e6|L5
 ```
 
 ### Example 2: Append a Line
