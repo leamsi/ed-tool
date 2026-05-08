@@ -232,7 +232,7 @@ $ ed-tool r lines.txt
 1:c93c|keep
 2:723c|remove
 
-$ ed-tool d lines.txt 2:f9a6
+$ ed-tool d lines.txt 2:723c
 
 $ cat lines.txt
 keep
@@ -300,7 +300,7 @@ The hash model adds overhead per edit, but buys correctness insurance.
 - **CRC algorithm:** CRC-16-CCITT (`binascii.crc_hqx`)
 - **Hash scope:** 4 hexadecimal characters (16-bit)
 - **What's hashed:** The raw line bytes *including* the trailing newline (`\n`)
-- **Encoding:** Latin-1 with `errors='replace'` (non-UTF-8 bytes are replaced, CRC remains deterministic)
+- **Encoding:** UTF-8 with `errors='replace'` (non-UTF-8 bytes are replaced, CRC remains deterministic)
 
 ```
 CRC computed over: b'Hello\n'
