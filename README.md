@@ -106,7 +106,7 @@ The hash (`2:e343`) proves you're appending after the correct line. If the file 
 ed-tool a example.txt 2:e343 -c "New line"
 ```
 
-**Empty stdin = no-op.** If you pipe nothing, nothing is appended.
+**Empty input creates a blank line.** Empty stdin (or `-c ""`) appends a blank line.
 
 ---
 
@@ -135,7 +135,7 @@ Hash validation prevents inserting before the wrong line.
 ed-tool i example.txt 2:e343 -c "Before World"
 ```
 
-**Empty stdin = no-op.**
+**Empty input creates a blank line.** Empty stdin (or `-c ""`) inserts a blank line.
 
 ---
 
@@ -228,7 +228,7 @@ EOF
 Only the original line 2 is replaced; the original line 3 remains. Use a
 bounded range such as `2:e343,4:abcd` for a block replacement.
 
-**Empty stdin = no-op.**
+**Empty input creates a blank line.** Empty stdin (or `-c ""`) replaces the target with a blank line.
 
 ---
 

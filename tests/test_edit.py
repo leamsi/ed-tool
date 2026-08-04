@@ -435,25 +435,31 @@ def test_change_via_stdin(tmp_path):
     assert content == "replaced\n"
 
 
-def test_empty_stdin_noop(tmp_path):
-    """Empty stdin causes a no-op (file unchanged) for a/i/c operations."""
-    f = tmp_path / "empty_stdin.txt"
-    f.write_bytes(b"line1\nline2\n")
-
-    r = run('r', str(f))
+def test_empty_stdin_creates_blank_line(tmp_path):
+    """Empty stdin creates a blank line for append, insert, and change."""
+    append_file = tmp_path / "empty_append.txt"
+    append_file.write_bytes(b"line1\nline2\n")
+    r = run('r', str(append_file))
     line1_ref = _ref_prefix(r.stdout.strip().splitlines()[0])
 
-    # append with empty stdin
-    result = run('a', str(f), line1_ref, stdin_input='')
+    result = run('a', str(append_file), line1_ref, stdin_input='')
     assert result.returncode == 0
-    assert f.read_bytes().decode() == "line1\nline2\n"
+    assert append_file.read_bytes() == b"line1\n\nline2\n"
 
-    # insert with empty stdin
-    result = run('i', str(f), line1_ref, stdin_input='')
-    assert result.returncode == 0
-    assert f.read_bytes().decode() == "line1\nline2\n"
+    insert_file = tmp_path / "empty_insert.txt"
+    insert_file.write_bytes(b"line1\nline2\n")
+    r = run('r', str(insert_file))
+    line2_ref = _ref_prefix(r.stdout.strip().splitlines()[1])
 
-    # change with empty stdin
-    result = run('c', str(f), line1_ref, stdin_input='')
+    result = run('i', str(insert_file), line2_ref, stdin_input='')
     assert result.returncode == 0
-    assert f.read_bytes().decode() == "line1\nline2\n"
+    assert insert_file.read_bytes() == b"line1\n\nline2\n"
+
+    change_file = tmp_path / "empty_change.txt"
+    change_file.write_bytes(b"line1\nline2\n")
+    r = run('r', str(change_file))
+    line1_ref = _ref_prefix(r.stdout.strip().splitlines()[0])
+
+    result = run('c', str(change_file), line1_ref, stdin_input='')
+    assert result.returncode == 0
+    assert change_file.read_bytes() == b"\nline2\n"

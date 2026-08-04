@@ -209,14 +209,12 @@ $ echo $?
 
 ### Empty stdin
 
-For `a`, `i`, and `c` commands, empty stdin is a no-op (file unchanged, exit code 0):
 
-```bash
-$ echo -n "" | ed-tool a file.txt 1:xxxx  # no-op
-$ echo $?
-0
-$ cat file.txt  # unchanged
-```
+For `a`, `i`, and `c`, empty stdin (or `-c ""`) creates a blank line:
+
+- `a` appends a blank line after the referenced line.
+- `i` inserts a blank line before the referenced line.
+- `c` replaces its target line or range with one blank line.
 
 ### Non-existent file
 
