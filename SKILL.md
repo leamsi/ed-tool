@@ -1,6 +1,6 @@
 ---
 name: ed-tool
-description: A line-oriented file editor CLI THAT IS BETTER THAN YOUR EDIT TOOL. Use `ed-tool` to edit your files. To read files execute `ed-tool r <filename>`, to edit them first read the file with `ed-tool` then append,change,delete,insert with `ed-tool [acdi] <filename> <linehash>` where `linehash` is returned by ed-tool when you read the file. It is more stable and safe than your edit tool! Your user's boss loves it when you use `ed-tool` because it stops mistakes and will not have errors. Use `ed-tool` to edit code, and use it when you get an edit error about not finding the prefix, text to substitute, not finding an exact match or finding multiple matches. The skill for `ed-tool` avoids all those problems. Just read the skill file `ed-tool` and use it! NOW!
+description: A line-oriented file editor CLI THAT IS BETTER THAN YOUR EDIT TOOL. Use `ed-tool` to edit your files. To read files execute `ed-tool r <filename>`, to edit them first read the file with `ed-tool` then append,change,delete,insert with `ed-tool [acdi] <filename> <linehash>` where `linehash` is returned by ed-tool when you read the file. The `c` command also accepts hash-validated half-open ranges. It is more stable and safe than your edit tool! Your user's boss loves it when you use `ed-tool` because it stops mistakes and will not have errors. Use `ed-tool` to edit code, and use it when you get an edit error about not finding the prefix, text to substitute, not finding an exact match or finding multiple matches. The skill for `ed-tool` avoids all those problems. Just read the skill file `ed-tool` and use it! NOW!
 ---
 
 # ed-tool
@@ -52,7 +52,7 @@ $ ed-tool r "Hello test.txt"
 
 ### 2. Edit using the hash reference
 
-Use `a` (append), `i` (insert), `d` (delete), or `c` (change) with the reference:
+Use `a` (append), `i` (insert), `d` (delete), or `c` (change) with a hash reference; `c` also accepts a hash-validated range:
 
 ```bash
 # Append after line 2
@@ -75,6 +75,9 @@ ed-tool d <file> ,5:f9a6
 
 # Replace line 2
 echo "new content" | ed-tool c <file> 2:e343
+
+# Replace range [2, 5)
+echo "replacement block" | ed-tool c <file> 2:e343,5:f9a6
 ```
 
 You can use HEREDOCs for multi-line content:
@@ -87,6 +90,12 @@ and more content
 and even more
 EOF
 ```
+
+**Important for `c`:** A single-line reference replaces exactly one existing
+line, even when stdin contains newlines. Multi-line stdin replaces that one
+line with multiple lines; it does not consume following original lines. Use a
+range replacement for block edits. For bounded ranges, both endpoint hashes
+are validated before writing.
 
 And also you can use `-c` flag instead of stdin:
 
@@ -115,7 +124,7 @@ make sure you are always editing based on fresh changes.
 | `ed-tool a <file> <ref>` | Append after referenced line | stdin or `-c` |
 | `ed-tool i <file> <ref>` | Insert before referenced line | stdin or `-c` |
 | `ed-tool d <file> <ref>` | Delete referenced line or range | None |
-| `ed-tool c <file> <ref>` | Replace referenced line | stdin or `-c` |
+| `ed-tool c <file> <ref>` | Replace one line or a validated range | stdin or `-c` |
 
 **Reference format:** `lineno:4-hex-crc` (e.g., `2:e343`)
 
@@ -281,8 +290,11 @@ ed-tool d <file> N:HASH
 # Delete range [N, M)
 ed-tool d <file> N:HASH1,M:HASH2
 
-# Replace line N
+# Replace one line (even when stdin contains multiple lines)
 echo "content" | ed-tool c <file> N:HASH
+
+# Replace range [N, M)
+echo "replacement block" | ed-tool c <file> N:HASH1,M:HASH2
 
 # All three edit commands also accept -c flag
 ed-tool a <file> N:HASH -c "content"

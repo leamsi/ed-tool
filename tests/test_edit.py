@@ -258,6 +258,64 @@ def test_change_middle_line(tmp_path):
     assert content == "keep1\nnew2\nkeep3\n"
 
 
+def test_change_multiline_stdin_replaces_one_line(tmp_path):
+    """Multi-line stdin replaces one line and preserves following lines."""
+    f = tmp_path / "chmultiline.txt"
+    f.write_bytes(b"keep1\nold2\nkeep3\n")
+
+    r = run('r', str(f))
+    line2_ref = _ref_prefix(r.stdout.strip().splitlines()[1])
+
+    result = run('c', str(f), line2_ref, stdin_input='new2a\nnew2b\n')
+    assert result.returncode == 0
+    assert f.read_bytes() == b"keep1\nnew2a\nnew2b\nkeep3\n"
+
+
+def test_change_range_replaces_half_open_slice(tmp_path):
+    """'c' replaces the referenced half-open range [start, end)."""
+    f = tmp_path / "chrange.txt"
+    f.write_bytes(b"keep1\nold2\nold3\nkeep4\n")
+
+    r = run('r', str(f))
+    refs = [_ref_prefix(line) for line in r.stdout.strip().splitlines()]
+
+    result = run('c', str(f), f"{refs[1]},{refs[3]}", stdin_input='new2\nnew3')
+    assert result.returncode == 0
+    assert f.read_bytes() == b"keep1\nnew2\nnew3\nkeep4\n"
+
+
+def test_change_range_stale_endpoint_is_atomic(tmp_path):
+    """A stale range endpoint rejects the change without modifying the file."""
+    f = tmp_path / "chrange_stale.txt"
+    f.write_bytes(b"one\ntwo\nthree\nfour\n")
+
+    r = run('r', str(f))
+    refs = [_ref_prefix(line) for line in r.stdout.strip().splitlines()]
+
+    f.write_bytes(b"one\ntwo\nthree\nchanged four\n")
+    result = run('c', str(f), f"{refs[0]},{refs[3]}", stdin_input='replacement')
+
+    assert result.returncode == 1
+    assert 'hash mismatch' in result.stderr.lower()
+    assert f.read_bytes() == b"one\ntwo\nthree\nchanged four\n"
+
+
+def test_change_range_out_of_range_endpoint_is_atomic(tmp_path):
+    """An out-of-range endpoint rejects the change without modifying the file."""
+    f = tmp_path / "chrange_oor.txt"
+    f.write_bytes(b"one\ntwo\nthree\n")
+
+    r = run('r', str(f))
+    line1_ref = _ref_prefix(r.stdout.strip().splitlines()[0])
+    before = f.read_bytes()
+
+    result = run('c', str(f), f"{line1_ref},99:0000", stdin_input='replacement')
+
+    assert result.returncode == 1
+    assert 'out of range' in result.stderr.lower()
+    assert f.read_bytes() == before
+
+
 def test_change_bad_hash(tmp_path):
     """'c' exits non-zero when the hash doesn't match."""
     f = tmp_path / "chbad.txt"

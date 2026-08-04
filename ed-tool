@@ -115,6 +115,49 @@ def parse_line_range(range_str, total_lines):
     return begin, end
 
 
+def parse_ref_range(ref, lines):
+    """Parse and validate a line reference or half-open reference range.
+
+    A single reference selects one line. Comma-separated references use the
+    same optional endpoints as ``d``: ``start_ref,end_ref``, ``start_ref,`` or
+    ``,end_ref``. The returned bounds are 1-based and half-open.
+    """
+    if ',' in ref:
+        parts = ref.split(',')
+        if len(parts) != 2:
+            sys.stderr.write(f'ed-tool: invalid range format: {ref}\n')
+            sys.exit(1)
+
+        start_ref, end_ref = parts
+
+        if start_ref and end_ref:
+            start_lineno, start_hash = parse_ref(start_ref)
+            end_lineno, end_hash = parse_ref(end_ref)
+            validate_ref(start_lineno, start_hash, lines)
+            validate_ref(end_lineno, end_hash, lines)
+            begin, end = start_lineno, end_lineno
+        elif start_ref:
+            start_lineno, start_hash = parse_ref(start_ref)
+            validate_ref(start_lineno, start_hash, lines)
+            begin, end = start_lineno, len(lines) + 1
+        elif end_ref:
+            end_lineno, end_hash = parse_ref(end_ref)
+            validate_ref(end_lineno, end_hash, lines)
+            begin, end = 1, end_lineno
+        else:
+            sys.stderr.write(f'ed-tool: invalid range format: {ref}\n')
+            sys.exit(1)
+    else:
+        lineno, expected_hash = parse_ref(ref)
+        validate_ref(lineno, expected_hash, lines)
+        begin, end = lineno, lineno + 1
+
+    if begin > end:
+        sys.stderr.write(f'ed-tool: invalid range: {ref} (start > end)\n')
+        sys.exit(1)
+
+    return begin, end
+
 def do_read(args):
     """Read a file and print each line with a lineno:hash| prefix."""
     try:
@@ -189,9 +232,8 @@ def do_insert(args):
 def do_delete(args):
     """Delete the referenced line or range of lines.
 
-    The ref (lineno:hash) or range (ref,ref, ref,, ,ref) is validated before any mutation.
+    The ref or range is validated before any mutation.
     """
-    ref = args.ref
 
     try:
         with open(args.file, 'r', encoding='utf-8', errors='replace') as f:
@@ -200,54 +242,19 @@ def do_delete(args):
         sys.stderr.write(f'ed-tool: {e}\n')
         sys.exit(1)
 
-    if ',' in ref:
-        parts = ref.split(',')
-        if len(parts) != 2:
-            sys.stderr.write(f'ed-tool: invalid range format: {ref}\n')
-            sys.exit(1)
-
-        start_ref, end_ref = parts
-
-        if start_ref and end_ref:
-            # d <file> <line-from:hash-1>,<line-to:hash-2>
-            start_lineno, start_hash = parse_ref(start_ref)
-            end_lineno, end_hash = parse_ref(end_ref)
-            validate_ref(start_lineno, start_hash, lines)
-            validate_ref(end_lineno, end_hash, lines)
-            begin, end = start_lineno, end_lineno
-        elif start_ref:
-            # d <file> <line:hash>,
-            start_lineno, start_hash = parse_ref(start_ref)
-            validate_ref(start_lineno, start_hash, lines)
-            begin, end = start_lineno, len(lines) + 1
-        elif end_ref:
-            # d <file> ,<line:hash>
-            end_lineno, end_hash = parse_ref(end_ref)
-            validate_ref(end_lineno, end_hash, lines)
-            begin, end = 1, end_lineno
-        else:
-            sys.stderr.write(f'ed-tool: invalid range format: {ref}\n')
-            sys.exit(1)
-    else:
-        # d <file> <line:hash>
-        lineno, expected_hash = parse_ref(ref)
-        validate_ref(lineno, expected_hash, lines)
-        begin, end = lineno, lineno + 1
-
-    if begin > end:
-        sys.stderr.write(f'ed-tool: invalid range: {ref} (start > end)\n')
-        sys.exit(1)
+    begin, end = parse_ref_range(args.ref, lines)
 
     new_lines = lines[:begin - 1] + lines[end - 1:]
     _write_file(args.file, new_lines)
 
 
 def do_change(args):
-    """Change the content of the referenced line.
+    """Change the content of a referenced line or range.
 
-    The ref (lineno:hash) is validated before any mutation.
+    A single ref replaces exactly one existing line. A comma-separated range
+    replaces the half-open slice [start, end). Multi-line content is kept in
+    the replacement; it does not consume following original lines.
     """
-    lineno, expected_hash = parse_ref(args.ref)
     content = args.content
     if content is None:
         content = sys.stdin.read().rstrip('\n')
@@ -261,11 +268,10 @@ def do_change(args):
         sys.stderr.write(f'ed-tool: {e}\n')
         sys.exit(1)
 
-    validate_ref(lineno, expected_hash, lines)
+    begin, end = parse_ref_range(args.ref, lines)
 
-    lines[lineno - 1] = content + '\n'
+    lines[begin - 1:end - 1] = [content + '\n']
     _write_file(args.file, lines)
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='ed-tool')
@@ -279,9 +285,14 @@ EOF
   ed-tool i file.txt 2:bcde <<EOF   # insert before line 2
 another line
 EOF
-  ed-tool c file.txt 3:cdef <<EOF   # change line 3
+  ed-tool c file.txt 3:cdef <<EOF   # replace exactly line 3
 replaced
 EOF
+  ed-tool c file.txt 2:bcde,5:f012 <<EOF  # replace range [2, 5)
+replacement block
+EOF
+  # Multiline stdin with one ref replaces exactly one existing line with multiple lines.
+  # It does not consume following original lines; use a range for block edits.
   ed-tool d file.txt 4:def0        # delete line 4'''
     subparsers = parser.add_subparsers(dest='command', parser_class=argparse.ArgumentParser)
 
@@ -337,18 +348,26 @@ EOF'''
   ed-tool r file.txt                   # get current refs first'''
 
     # change
-    p_c = subparsers.add_parser('c', help='change the content of the referenced line')
+    p_c = subparsers.add_parser('c', help='change one referenced line or a hash-validated range')
     p_c.formatter_class = argparse.RawDescriptionHelpFormatter
     p_c.add_argument('file')
-    p_c.add_argument('ref', help='lineno:hash of the line to change')
-    p_c.add_argument('-c', '--content', dest='content', help='new line content (reads stdin if omitted)')
-    p_c.epilog = '''examples:
-  ed-tool c file.txt 1:abcd -c "replacement"       # replace line 1
-  echo "replacement" | ed-tool c file.txt 1:abcd  # same, via stdin
-  <<EOF ed-tool c file.txt 1:abcd                 # heredoc
-replacement
-EOF'''
+    p_c.add_argument('ref', help='lineno:hash or range (e.g. 1:abcd,3:cdef)')
+    p_c.add_argument('-c', '--content', dest='content', help='replacement content (reads stdin if omitted)')
 
+    p_c.epilog = '''examples:
+  ed-tool c file.txt 1:abcd -c "replacement"       # replace exactly one line
+  echo "replacement" | ed-tool c file.txt 1:abcd  # same, via stdin
+  <<EOF ed-tool c file.txt 1:abcd                 # multiline stdin still targets one line
+replacement line 1
+replacement line 2
+EOF
+  ed-tool c file.txt 2:bcde,5:f012 <<EOF       # replace range [2, 5)
+replacement block
+EOF
+
+warning:
+  Multi-line stdin replaces exactly one existing line with multiple lines; it does not consume
+  the following original lines. Use a range replacement for block edits.'''
     args, extras = parser.parse_known_args()
     if args.command == 'r' and extras:
         if not args.range and len(extras) == 1:

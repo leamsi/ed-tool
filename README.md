@@ -183,7 +183,20 @@ $ ed-tool r example.txt
 
 ### `ed-tool c <file> <ref>`
 
-Replace the referenced line's content. Reads new content from stdin (or `-c`).
+Replace exactly one referenced line, or a hash-validated half-open range.
+Reads replacement content from stdin (or `-c`).
+
+- `ed-tool c <file> <line:hash>` replaces exactly that one line.
+- `ed-tool c <file> <start:hash>,<end:hash>` replaces the range `[start, end)`.
+- `ed-tool c <file> <start:hash>,` replaces from `start` through EOF.
+- `ed-tool c <file> ,<end:hash>` replaces everything before `end`.
+
+**Important:** A single-line `c` target always replaces exactly one existing
+line, even when stdin contains newlines. Multi-line stdin replaces that one
+line with multiple lines; it does not consume the following original lines.
+Use a range replacement for block edits. For a bounded range, both endpoint
+hashes are checked before writing; stale or out-of-range references leave the
+file unchanged.
 
 ```
 $ ed-tool r example.txt
@@ -204,6 +217,16 @@ The new content gets a new CRC hash (`b860`).
 ```bash
 ed-tool c example.txt 2:e343 -c "Replaced"
 ```
+
+**Multi-line replacement example:**
+```bash
+$ cat <<'EOF' | ed-tool c example.txt 2:e343
+replacement line 1
+replacement line 2
+EOF
+```
+Only the original line 2 is replaced; the original line 3 remains. Use a
+bounded range such as `2:e343,4:abcd` for a block replacement.
 
 **Empty stdin = no-op.**
 
